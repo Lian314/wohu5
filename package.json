@@ -18,6 +18,10 @@
   "author": "",
   "license": "ISC",
   "type": "commonjs",
+  "engines": {
+    "node": ">=22.12.0",
+    "npm": ">=10"
+  },
   "dependencies": {
     "express": "^5.2.1",
     "huya-danmu": "^2.0.3",
