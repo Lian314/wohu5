@@ -5,9 +5,14 @@
   "main": "app/main.js",
   "scripts": {
     "desktop": "electron .",
+    "assets:icons": "python scripts/generate-icons.py",
     "dist": "electron-builder --win portable",
+    "dist:win": "electron-builder --win portable",
+    "dist:mac": "electron-builder --mac dmg zip",
     "backend": "node server.js",
-    "test": "node -e \"const fs=require('fs'); for (const f of ['app/renderer/app.js','app/renderer/detail.js','app/renderer/pet.js']) new Function(fs.readFileSync(f,'utf8')); console.log('renderer syntax ok')\""
+    "test": "npm run test:renderer && npm run test:desktop-config",
+    "test:renderer": "node -e \"const fs=require('fs'); for (const f of ['app/renderer/app.js','app/renderer/detail.js','app/renderer/pet.js']) new Function(fs.readFileSync(f,'utf8')); console.log('renderer syntax ok')\"",
+    "test:desktop-config": "node scripts/verify-desktop-config.js"
   },
   "keywords": [],
   "author": "",
@@ -29,7 +34,7 @@
   },
   "build": {
     "appId": "com.huya.danmaku.copilot",
-    "productName": "虎牙弹幕助手",
+    "productName": "弹幕梗捕手",
     "directories": {
       "output": "release"
     },
@@ -41,7 +46,8 @@
     "disableAsarIntegrity": true,
     "asar": true,
     "win": {
-      "signAndEditExecutable": false,
+      "icon": "app/renderer/assets/icon.ico",
+      "signExecutable": false,
       "target": [
         {
           "target": "portable",
@@ -51,8 +57,33 @@
         }
       ]
     },
+    "mac": {
+      "icon": "app/renderer/assets/icon.icns",
+      "identity": null,
+      "artifactName": "Danmaku-Meme-Catcher-${version}-${arch}.${ext}",
+      "category": "public.app-category.utilities",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ]
+    },
     "portable": {
       "artifactName": "Huya-Danmaku-Copilot-${version}.exe"
+    },
+    "dmg": {
+      "artifactName": "Danmaku-Meme-Catcher-${version}-${arch}.dmg"
     }
   }
 }

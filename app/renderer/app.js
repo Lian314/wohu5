@@ -16,7 +16,8 @@ const state = {
     opacity: 1,
     marked: readStore(markedKey),
     blocked: readStore(blockedKey),
-    libraryTab: "marked"
+    libraryTab: "marked",
+    roomProfile: null
 };
 
 const pinnedList = document.getElementById("pinned-list");
@@ -124,6 +125,7 @@ function updateBackendStatus(info) {
     if (!info) return;
     statusEl.textContent = info.status || "未知";
     roomLabel.textContent = info.roomId ? `直播间 ${info.roomId}` : "未选择直播间";
+    state.roomProfile = info.roomProfile || state.roomProfile;
     if (info.roomId) {
         roomInput.value = info.roomId;
     }
@@ -492,7 +494,8 @@ function buildReviewPayload(group) {
             endedAt: Date.now()
         },
         samples: group.samples.slice(-30),
-        context: state.raw.filter((item) => !isBlocked(item.content)).slice(-80)
+        context: state.raw.filter((item) => !isBlocked(item.content)).slice(-80),
+        roomProfile: state.roomProfile
     };
 }
 
