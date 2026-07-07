@@ -1,10 +1,13 @@
 {
   "name": "hy5",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "虎牙弹幕统计浮窗桌面端",
+  "main": "app/main.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "desktop": "electron .",
+    "dist": "electron-builder --win portable",
+    "backend": "node server.js",
+    "test": "node -e \"const fs=require('fs'); for (const f of ['app/renderer/app.js','app/renderer/detail.js','app/renderer/pet.js']) new Function(fs.readFileSync(f,'utf8')); console.log('renderer syntax ok')\""
   },
   "keywords": [],
   "author": "",
@@ -19,5 +22,37 @@
     "socks-proxy-agent": "^10.1.0",
     "to-arraybuffer": "^1.0.1",
     "ws": "^8.21.0"
+  },
+  "devDependencies": {
+    "electron": "^31.7.7",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "com.huya.danmaku.copilot",
+    "productName": "虎牙弹幕助手",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "app/**/*",
+      "v1.png",
+      "package.json"
+    ],
+    "disableAsarIntegrity": true,
+    "asar": true,
+    "win": {
+      "signAndEditExecutable": false,
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "portable": {
+      "artifactName": "Huya-Danmaku-Copilot-${version}.exe"
+    }
   }
 }

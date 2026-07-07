@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>弹幕梗捕手</title>
+    <link rel="stylesheet" href="./styles.css">
+</head>
+<body class="stats-body">
+    <main class="window-card stats-card">
+        <div class="window-titlebar">
+            <div class="title-left">
+                <button class="brand-button" id="room-button" title="连接直播间" aria-label="连接直播间"></button>
+                <strong>弹幕梗捕手</strong>
+                <div class="running-pill" title="连接状态">
+                    <i></i>
+                    <span id="connection-status">进行中</span>
+                </div>
+            </div>
+            <div class="title-actions">
+                <button class="icon-action pin-icon" id="pin-window" title="置顶" aria-label="置顶"></button>
+                <button class="icon-action min-icon" id="minimize-window" title="最小化" aria-label="最小化"></button>
+                <button class="icon-action close-icon" id="close-window" title="关闭" aria-label="关闭"></button>
+            </div>
+        </div>
+
+        <section class="stats-panels">
+            <div class="section-bar">
+                <span>置顶热词</span>
+                <span id="pinned-count">0</span>
+            </div>
+            <div class="pinned-list" id="pinned-list">
+                <div class="empty-state compact-empty">30 秒内的高频弹幕会停留在这里</div>
+            </div>
+            <div class="section-bar fresh-bar">
+                <span>新弹幕</span>
+                <span id="fresh-count">0</span>
+            </div>
+            <div class="danmaku-list" id="fresh-list">
+                <div class="empty-state">等待直播间弹幕进入</div>
+            </div>
+        </section>
+
+        <footer class="window-foot">
+            <span id="room-label">未选择直播间</span>
+            <button class="library-button" id="library-button" type="button">热梗库</button>
+        </footer>
+    </main>
+
+    <div class="room-popover" id="room-popover" hidden>
+        <form id="room-form">
+            <label for="room-input">直播间号</label>
+            <div class="room-input-row">
+                <input id="room-input" inputmode="numeric" autocomplete="off" placeholder="例如 30764305">
+                <button type="submit">连接</button>
+            </div>
+            <p id="room-message">连接后将自动拉取弹幕。</p>
+        </form>
+    </div>
+
+    <aside class="library-panel" id="library-panel" hidden>
+        <div class="library-head">
+            <span>热梗库</span>
+            <button class="detail-close close-icon" id="library-close" title="关闭" aria-label="关闭"></button>
+        </div>
+        <div class="library-tabs">
+            <button class="library-tab active" data-library-tab="marked" type="button">标记</button>
+            <button class="library-tab" data-library-tab="blocked" type="button">屏蔽</button>
+        </div>
+        <div class="library-list" id="library-list"></div>
+    </aside>
+
+    <div class="toast" id="toast"></div>
+    <script src="./app.js"></script>
+</body>
+</html>

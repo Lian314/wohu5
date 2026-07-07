@@ -1,0 +1,32 @@
+node_modules/
+npm-debug.log*
+frontend-preview.png
+frontend-detail-preview.png
+.chrome-preview/
+
+# Build outputs
+release/
+dist/
+out/
+*.exe
+*.msi
+*.dmg
+*.AppImage
+*.blockmap
+*.asar
+
+# Electron builder cache/output
+builder-debug.yml
+builder-effective-config.yaml
+
+# Local env and logs
+.env
+.env.*
+*.log
+logs/
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
