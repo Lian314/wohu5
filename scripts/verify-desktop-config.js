@@ -35,7 +35,8 @@ const workflow = read('.github/workflows/build-desktop.yml');
 const docs = read('docs/desktop-build.md');
 
 [
-    ['app/renderer/assets/product-logo.svg', 1000],
+    ['app/renderer/assets/product-logo-ai-source.png', 100000],
+    ['app/renderer/assets/product-logo.svg', 100],
     ['app/renderer/assets/icon.png', 100000],
     ['app/renderer/assets/icon.ico', 50000],
     ['app/renderer/assets/icon.icns', 100000],
@@ -68,7 +69,7 @@ assert(main.includes('app.dock.hide()'), 'macOS menu bar mode should hide the do
 assert(main.includes('app.setAppUserModelId'), 'Windows app user model id should be set for shell integration.');
 assert(main.includes('tray.setContextMenu(menu)'), 'Tray must expose a context menu.');
 
-assert(styles.includes('product-logo.svg'), 'Renderer should use the product logo asset.');
+assert(styles.includes('icon.png'), 'Renderer should use the generated AI product logo asset.');
 
 assert(workflow.includes('runs-on: windows-latest'), 'CI must include Windows packaging.');
 assert(workflow.includes('runs-on: macos-latest'), 'CI must include macOS packaging.');

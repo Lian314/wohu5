@@ -24,6 +24,8 @@ builder-effective-config.yaml
 .env.*
 *.log
 logs/
+data/
+external-rag-data/
 
 # OS/editor noise
 .DS_Store

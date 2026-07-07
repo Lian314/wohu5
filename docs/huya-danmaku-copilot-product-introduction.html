@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>弹幕梗捕手 - 产品介绍与演示中心</title>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Noto+Sans+SC:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-dark: #080b11;
+            --bg-card: rgba(22, 28, 45, 0.7);
+            --bg-card-hover: rgba(28, 36, 58, 0.9);
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --huya-yellow: #ff9900;
+            --huya-orange: #ff5500;
+            --huya-glow: linear-gradient(135deg, #ff9900 0%, #ff5500 100%);
+            --border-color: rgba(255, 255, 255, 0.06);
+            --border-active: rgba(255, 153, 0, 0.4);
+            --shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.7);
+            --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', 'Noto Sans SC', sans-serif;
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            line-height: 1.6;
+            overflow-x: hidden;
+            background-image: 
+                radial-gradient(circle at 10% 20%, rgba(255, 85, 0, 0.08) 0%, transparent 40%),
+                radial-gradient(circle at 90% 80%, rgba(255, 153, 0, 0.08) 0%, transparent 40%);
+            background-attachment: fixed;
+            padding: 2rem;
+        }
+
+        /* 顶部导航 */
+        header {
+            max-width: 1400px;
+            margin: 0 auto 3rem auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-bottom: 1.5rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .logo-section h1 {
+            font-size: 1.6rem;
+            font-weight: 900;
+            background: var(--huya-glow);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: -0.5px;
+            margin-bottom: 0.2rem;
+        }
+
+        .logo-section p {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            font-weight: 500;
+        }
+
+        .tag-badge {
+            border: 1px solid var(--huya-yellow);
+            background: rgba(255, 153, 0, 0.1);
+            color: var(--huya-yellow);
+            padding: 0.4rem 1.2rem;
+            border-radius: 9999px;
+            font-size: 0.85rem;
+            font-weight: 700;
+            box-shadow: 0 0 15px rgba(255, 153, 0, 0.15);
+        }
+
+        /* 布局 */
+        .grid-container {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: 1fr 1.2fr;
+            gap: 2.5rem;
+            align-items: start;
+        }
+
+        @media (max-width: 1024px) {
+            .grid-container {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* 左侧：精美大图及核心卖点 */
+        .left-column {
+            display: flex;
+            flex-direction: column;
+            gap: 2rem;
+        }
+
+        .image-card {
+            background-color: var(--bg-card);
+            border-radius: 20px;
+            border: 1px solid var(--border-color);
+            padding: 1.5rem;
+            box-shadow: var(--shadow);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            backdrop-filter: blur(12px);
+        }
+
+        .image-card h3 {
+            font-size: 1.1rem;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: var(--huya-yellow);
+        }
+
+        .image-card h3::before {
+            content: '';
+            width: 3px;
+            height: 15px;
+            background: var(--huya-glow);
+            display: inline-block;
+            border-radius: 2px;
+        }
+
+        .img-wrapper {
+            width: 100%;
+            border-radius: 12px;
+            overflow: hidden;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            background-color: #0b0f19;
+            aspect-ratio: 16/10;
+            position: relative;
+        }
+
+        .img-wrapper img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transition: var(--transition);
+        }
+
+        .img-wrapper:hover img {
+            transform: scale(1.03);
+        }
+
+        .slogan-card {
+            background: linear-gradient(135deg, rgba(255, 85, 0, 0.15) 0%, rgba(255, 153, 0, 0.05) 100%);
+            border: 1px solid rgba(255, 153, 0, 0.2);
+            border-radius: 16px;
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .slogan-card h2 {
+            font-size: 1.5rem;
+            font-weight: 800;
+            color: #ffffff;
+        }
+
+        .slogan-card p {
+            color: var(--text-muted);
+            font-size: 0.95rem;
+        }
+
+        /* 右侧：交互式说明文档 */
+        .right-column {
+            background-color: var(--bg-card);
+            border-radius: 24px;
+            border: 1px solid var(--border-color);
+            box-shadow: var(--shadow);
+            padding: 2.5rem;
+            backdrop-filter: blur(12px);
+            min-height: 600px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* 导航 Tab */
+        .tabs-header {
+            display: flex;
+            gap: 0.5rem;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 1rem;
+            margin-bottom: 2rem;
+            overflow-x: auto;
+        }
+
+        .tab-btn {
+            background: transparent;
+            border: 1px solid transparent;
+            color: var(--text-muted);
+            padding: 0.6rem 1.2rem;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: var(--transition);
+        }
+
+        .tab-btn:hover {
+            color: #ffffff;
+            background-color: rgba(255, 255, 255, 0.03);
+        }
+
+        .tab-btn.active {
+            border-color: var(--huya-yellow);
+            color: var(--huya-yellow);
+            background: rgba(255, 153, 0, 0.08);
+            text-shadow: 0 0 10px rgba(255, 153, 0, 0.2);
+        }
+
+        /* 内容区 */
+        .tab-content {
+            display: none;
+            animation: fadeIn 0.4s ease;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .content-section {
+            margin-bottom: 1.5rem;
+        }
+
+        .content-section h4 {
+            font-size: 1.15rem;
+            font-weight: 700;
+            margin-bottom: 0.75rem;
+            color: #ffffff;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .content-section h4::before {
+            content: '●';
+            color: var(--huya-yellow);
+            font-size: 0.8rem;
+        }
+
+        .content-section p {
+            color: var(--text-muted);
+            font-size: 0.95rem;
+            margin-bottom: 1rem;
+        }
+
+        /* 解决痛点网格 */
+        .pain-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+
+        @media (max-width: 640px) {
+            .pain-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .pain-item {
+            background-color: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 1rem;
+            text-align: center;
+        }
+
+        .pain-icon {
+            font-size: 1.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .pain-title {
+            font-size: 0.9rem;
+            font-weight: 700;
+            color: #ffffff;
+            margin-bottom: 0.25rem;
+        }
+
+        .pain-desc {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        /* 核心功能卡片 */
+        .feature-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+        }
+
+        @media (max-width: 640px) {
+            .feature-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .feature-card {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--border-color);
+            border-radius: 14px;
+            padding: 1.25rem;
+            transition: var(--transition);
+        }
+
+        .feature-card:hover {
+            border-color: var(--border-active);
+            transform: translateY(-2px);
+            background-color: var(--bg-card-hover);
+        }
+
+        .feat-title {
+            font-size: 0.95rem;
+            font-weight: 700;
+            color: var(--huya-yellow);
+            margin-bottom: 0.4rem;
+        }
+
+        .feat-desc {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+        }
+
+        /* 对阵展示 */
+        .vs-box {
+            background: linear-gradient(90deg, rgba(59, 130, 246, 0.1) 0%, rgba(239, 68, 68, 0.1) 100%);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            padding: 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 1rem;
+        }
+
+        .team {
+            font-size: 1.1rem;
+            font-weight: 900;
+        }
+
+        .team-left { color: #3b82f6; }
+        .team-right { color: #ef4444; }
+
+        .vs-middle {
+            font-size: 0.8rem;
+            font-weight: 700;
+            color: var(--text-muted);
+            background: rgba(255, 255, 255, 0.08);
+            padding: 0.2rem 0.6rem;
+            border-radius: 4px;
+        }
+
+        /* 表格样式 */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1rem;
+        }
+
+        th, td {
+            text-align: left;
+            padding: 0.75rem 1rem;
+            font-size: 0.85rem;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        th {
+            background-color: rgba(255, 255, 255, 0.03);
+            color: #ffffff;
+            font-weight: 700;
+        }
+
+        td {
+            color: var(--text-muted);
+        }
+
+        /* 话术高亮 */
+        .quote-box {
+            background-color: rgba(255, 153, 0, 0.05);
+            border-left: 3px solid var(--huya-yellow);
+            border-radius: 0 8px 8px 0;
+            padding: 0.75rem 1rem;
+            font-size: 0.85rem;
+            font-family: monospace;
+            margin-bottom: 0.75rem;
+            color: #ffeedd;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="logo-section">
+            <h1>弹幕梗捕手 - 产品介绍中心</h1>
+            <p>基于 AI 的直播节奏与场控副驾方案</p>
+        </div>
+        <div>
+            <span class="tag-badge">虎牙直播深度集成 Demo</span>
+        </div>
+    </header>
+
+    <div class="grid-container">
+        <!-- 左侧：产品设计大图与Slogan -->
+        <div class="left-column">
+            <div class="slogan-card">
+                <h2>懂弹幕、会接梗、能控场</h2>
+                <p>实时分析直播间情感起伏，将每一个即时爆发的“梗”转化为直播间的内容资产和热烈互动。</p>
+            </div>
+
+            <div class="image-card">
+                <h3>产品概念及多维分析展示图</h3>
+                <div class="img-wrapper">
+                    <!-- 嵌入已生成的产品介绍图 -->
+                    <img src="/C:/Users/a2627/.gemini/antigravity/brain/f1006229-b1f1-4301-9cb9-a2775c86bb3f/huya_product_intro_diagram_1783420657103.png" alt="产品架构与界面概念图">
+                </div>
+                <p style="font-size: 0.8rem; color: var(--text-muted); text-align: center;">图示：4个核心业务环节 - 弹幕感知、AI分析、智能提词与自动控场</p>
+            </div>
+        </div>
+
+        <!-- 右侧：详细内容 Tab 面板 -->
+        <div class="right-column">
+            <!-- 切换选项卡 -->
+            <div class="tabs-header">
+                <button class="tab-btn active" onclick="switchTab(0)">概述与痛点</button>
+                <button class="tab-btn" onclick="switchTab(1)">四大核心功能</button>
+                <button class="tab-btn" onclick="switchTab(2)">控场场景演示</button>
+                <button class="tab-btn" onclick="switchTab(3)">进度与规划</button>
+            </div>
+
+            <!-- Tab 1: 概述与痛点 -->
+            <div class="tab-content active">
+                <div class="content-section">
+                    <h4>产品概述</h4>
+                    <p>弹幕梗捕手是一款面向虎牙直播主播端的 AI 场控助手。它以桌面悬浮窗的形式置顶运行，实时过滤无用信息并聚合弹幕，自动解释正在发酵的热梗来源，并为主播快速生成极具网感的回应提词。</p>
+                </div>
+                
+                <div class="content-section">
+                    <h4>解决的主播痛点</h4>
+                    <div class="pain-grid">
+                        <div class="pain-item">
+                            <div class="pain-icon">👀</div>
+                            <div class="pain-title">看不过来</div>
+                            <div class="pain-desc">高频密集弹幕瞬间被刷走，错过关键内容。</div>
+                        </div>
+                        <div class="pain-item">
+                            <div class="pain-icon">🤯</div>
+                            <div class="pain-title">接不上来</div>
+                            <div class="pain-desc">新梗层出不穷，主播不了解背景极易冷场。</div>
+                        </div>
+                        <div class="pain-item">
+                            <div class="pain-icon">🛡️</div>
+                            <div class="pain-title">控不住场</div>
+                            <div class="pain-desc">引战与辱骂言论出现时，无法第一时间降温。</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="content-section" style="margin-top: 1.5rem;">
+                    <h4>目标用户价值</h4>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>角色</th>
+                                <th>核心使用价值</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>游戏主播</td>
+                                <td>及时接梗互动，降低看弹幕和控场压力，提高留存率。</td>
+                            </tr>
+                            <tr>
+                                <td>电竞解说</td>
+                                <td>监控红蓝双方弹幕加油声量，平衡解说语气。</td>
+                            </tr>
+                            <tr>
+                                <td>房管 / 运营</td>
+                                <td>辅助风险监控，自动记录高光事件，沉淀短视频文案。</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Tab 2: 核心功能 -->
+            <div class="tab-content">
+                <div class="content-section">
+                    <h4>四大核心功能</h4>
+                    <p>弹幕梗捕手从弹幕的流入清洗，一直到主播的语音输出、后台控场，提供了一站式的智能化闭环支持：</p>
+                    <div class="feature-grid">
+                        <div class="feature-card">
+                            <div class="feat-title">📊 4.1 实时弹幕统计</div>
+                            <div class="feat-desc">清洗脱敏，将重复和相似的刷屏弹幕自动聚合折叠，显示瞬时出现次数与爆发标签，减轻视觉负担。</div>
+                        </div>
+                        <div class="feature-card">
+                            <div class="feat-title">📌 4.2 置顶爆发热词</div>
+                            <div class="feat-desc">短时间内极速飙升的词汇自动置顶闪烁，实时捕捉“下饭”、“名场面”等直播间节奏爆发点。</div>
+                        </div>
+                        <div class="feature-card">
+                            <div class="feat-title">🔍 4.3 AI 梗背景检索</div>
+                            <div class="feat-desc">主播一键点击置顶梗，AI 自动联网解读其由来、爆发背景，并附上适合主播玩梗的契机说明。</div>
+                        </div>
+                        <div class="feature-card">
+                            <div class="feat-title">🎙️ 4.4 智能主播提词器</div>
+                            <div class="feat-desc">自动匹配生成“接梗”、“拉互动/爆了”、“降温/冷却”话术，帮助主播不露痕迹地接住弹幕节奏。</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="content-section" style="margin-top: 1.5rem;">
+                    <h4>亮点模块：一键切片与内容资产沉淀</h4>
+                    <p>主播在直播过程中打出精彩瞬时（如极限反杀、大失误），系统会自动触发打点请求。主播只需在提词面板点击<b>“剪辑打点”</b>，系统即刻保存当前时间戳，并在下播后利用 LLM 为其自动撰写极富短视频网感的标题与封面文案，转化为持久的内容资产。</p>
+                </div>
+            </div>
+
+            <!-- Tab 3: 控场场景演示 -->
+            <div class="tab-content">
+                <div class="content-section">
+                    <h4>待开发重点：AI 自动弹幕控场</h4>
+                    <p>当系统检测到敏感或者特定倾向的弹幕时，无需主播口头念出，AI 助手将自动拟好调解弹幕并在授权后发入直播间。</p>
+                </div>
+
+                <div class="content-section">
+                    <h4>场景 1：抵御人身攻击（降温防卫）</h4>
+                    <p>当黑粉攻击主播外貌或游戏操作时，系统监测到负向情绪浓度飙升，自动生成控场弹幕并发送：</p>
+                    <div class="quote-box">
+                        “哥哥长得明明很好看，别乱带节奏啦。”
+                    </div>
+                </div>
+
+                <div class="content-section">
+                    <h4>场景 2：电竞阵营声量平衡</h4>
+                    <p>在 T1 与 BLG 等重磅对决中，若直播间被一方粉丝刷屏，系统自动提醒并生成另一方的加油词以平衡声量：</p>
+                    <div class="vs-box">
+                        <span class="team team-left">BLG 加油 (90%)</span>
+                        <span class="vs-middle">VS</span>
+                        <span class="team team-right">T1 加油 (10%)</span>
+                    </div>
+                    <p style="margin-top: 0.5rem; font-size: 0.8rem;">触发“电竞失衡”。自动生成控场回复：</p>
+                    <div class="quote-box">
+                        “T1加油！主场这边也得有点声音，相信能打出精彩逆风局！”
+                    </div>
+                </div>
+
+                <div class="content-section">
+                    <h4>场景 3：冷场唤醒 & 高光打点</h4>
+                    <p>若弹幕密度极低，提词器建议抛出互动问题；若出现高光（666 刷屏），系统打点记录并生成视频标题：</p>
+                    <div class="quote-box">
+                        唤醒：“还在的兄弟在弹幕扣个 1，我看看有多少人醒着呢？”
+                    </div>
+                    <div class="quote-box">
+                        高光标题：《全直播间都以为寄了，主播下一秒极限反杀装到了！》
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tab 4: 进度与规划 -->
+            <div class="tab-content">
+                <div class="content-section">
+                    <h4>当前项目里程碑与实现进度</h4>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>模块</th>
+                                <th>功能点</th>
+                                <th>进度</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>数据层</td>
+                                <td>虎牙直播间 WebSocket 实时弹幕爬取与脱敏</td>
+                                <td>🟢 已完成</td>
+                            </tr>
+                            <tr>
+                                <td>分析层</td>
+                                <td>内存滑动窗口算法、热度/风险打分计算</td>
+                                <td>🟢 已完成</td>
+                            </tr>
+                            <tr>
+                                <td>交互层</td>
+                                <td>PC 置顶浮窗 UI 面板设计与半透明视觉贴合</td>
+                                <td>🟡 约 80% (核心展示可用)</td>
+                            </tr>
+                            <tr>
+                                <td>AI 功能</td>
+                                <td>Gemini 大模型提词、互动生成以及资产打点</td>
+                                <td>🟢 已完成基础接入</td>
+                            </tr>
+                            <tr>
+                                <td>控场层</td>
+                                <td>人身攻击拦截、电竞失衡加油自动弹幕发送</td>
+                                <td>🔴 规划与待开发中</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="content-section" style="margin-top: 1.5rem;">
+                    <h4>后续五阶段演进规划</h4>
+                    <p><b>一阶段</b>：完善并调优主播端桌面悬浮窗的细节交互体验。<br>
+                       <b>二阶段</b>：实现基于用户登录态的自动场控弹幕发送与日志记录。<br>
+                       <b>三阶段</b>：接入主播私域 RAG 热梗知识库，极大降低联网搜索延迟。<br>
+                       <b>四阶段</b>：扩展观众端页面，实现投票/话题和主播端的深度交互闭环。</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function switchTab(index) {
+            // 切换选项卡激活状态
+            const buttons = document.querySelectorAll('.tab-btn');
+            buttons.forEach(btn => btn.classList.remove('active'));
+            buttons[index].classList.add('active');
+
+            // 切换对应内容面板
+            const contents = document.querySelectorAll('.tab-content');
+            contents.forEach(content => content.classList.remove('active'));
+            contents[index].classList.add('active');
+        }
+    </script>
+</body>
+</html>

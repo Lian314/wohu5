@@ -24,6 +24,18 @@
             </div>
         </div>
 
+        <section class="control-panel" id="control-panel" hidden>
+            <div class="control-copy">
+                <span class="control-badge" id="control-type">控场</span>
+                <strong id="control-line"></strong>
+                <small id="control-reason"></small>
+            </div>
+            <div class="control-actions">
+                <button id="control-copy" type="button">复制</button>
+                <button id="control-dismiss" type="button" title="暂时忽略">忽略</button>
+            </div>
+        </section>
+
         <section class="stats-panels">
             <div class="section-bar">
                 <span>置顶热词</span>
@@ -65,6 +77,7 @@
         </div>
         <div class="library-tabs">
             <button class="library-tab active" data-library-tab="marked" type="button">标记</button>
+            <button class="library-tab" data-library-tab="seeded" type="button">词库</button>
             <button class="library-tab" data-library-tab="blocked" type="button">屏蔽</button>
         </div>
         <div class="library-list" id="library-list"></div>

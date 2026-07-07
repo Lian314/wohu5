@@ -6,14 +6,18 @@ const state = {
     aiResult: null,
     aiLoading: false,
     aiError: "",
+    controlSending: "",
+    controlResult: null,
     opacity: 1,
     markers: readMarkers()
 };
 
 const detailBody = document.getElementById("detail-body");
 const toastEl = document.getElementById("toast");
+const personaActions = document.getElementById("persona-actions");
 
 setupWindowControls();
+setupPersonaControls();
 setupOpacityWheel();
 
 if (window.desktopWindow) {
@@ -22,6 +26,8 @@ if (window.desktopWindow) {
         state.aiResult = null;
         state.aiLoading = true;
         state.aiError = "";
+        state.controlSending = "";
+        state.controlResult = null;
         renderDetail();
         requestAiReview(payload);
     });
@@ -48,6 +54,12 @@ function setupOpacityWheel() {
     }, { passive: false });
 }
 
+function setupPersonaControls() {
+    personaActions.querySelectorAll("[data-persona]").forEach((button) => {
+        button.addEventListener("click", () => sendPersonaDanmaku(button.dataset.persona));
+    });
+}
+
 function syncSolidFactor() {
     const normalized = (normalizeOpacity(state.opacity) - MIN_OPACITY) / (1 - MIN_OPACITY);
     document.documentElement.style.setProperty("--solid-factor", String(Math.max(0, Math.min(1, normalized))));
@@ -62,9 +74,16 @@ function normalizeOpacity(value) {
 function renderDetail() {
     const payload = state.payload;
     if (!payload || !payload.group) {
+        personaActions.hidden = true;
         detailBody.innerHTML = `<div class="empty-state detail-empty">点击左侧弹幕统计项查看详情</div>`;
         return;
     }
+
+    personaActions.hidden = false;
+    personaActions.querySelectorAll("[data-persona]").forEach((button) => {
+        button.classList.toggle("loading", state.controlSending === button.dataset.persona);
+        button.disabled = Boolean(state.controlSending);
+    });
 
     const group = payload.group;
     const ai = state.aiResult ? normalizeAiResult(state.aiResult, payload.fallback) : null;
@@ -72,6 +91,7 @@ function renderDetail() {
     detailBody.innerHTML = `
         <section class="prompter-card">
             <div class="prompter-title"><span class="section-icon">♬</span><span>一、主播提词器</span></div>
+            ${renderControlResult()}
             ${renderClipTools(group)}
             ${renderPrompterBody(ai)}
             <div class="raw-list">${renderSamples(group.samples || [])}</div>
@@ -90,22 +110,72 @@ function renderDetail() {
     document.getElementById("copy-context").addEventListener("click", () => copyReviewPayload(payload.reviewPayload));
     const retry = document.getElementById("retry-ai");
     if (retry) retry.addEventListener("click", () => requestAiReview(payload));
+    const login = document.getElementById("open-huya-login");
+    if (login) login.addEventListener("click", () => openHuyaLogin());
+}
+
+async function sendPersonaDanmaku(persona) {
+    if (!state.payload || !state.payload.group || !window.desktopWindow) return;
+    state.controlSending = persona;
+    state.controlResult = null;
+    renderDetail();
+    try {
+        const result = await window.desktopWindow.sendControlDanmaku(buildControlPayload(persona));
+        state.controlResult = result;
+        if (result.send && result.send.ok) {
+            showToast("控场弹幕已发送");
+        } else if (result.send && result.send.code === "LOGIN_REQUIRED") {
+            showToast("需要先登录虎牙");
+        } else {
+            showToast((result.send && result.send.message) || "发送未确认");
+        }
+    } catch (error) {
+        state.controlResult = {
+            text: "",
+            send: {
+                ok: false,
+                code: "FAILED",
+                message: error.message || "控场发送失败"
+            }
+        };
+        showToast("控场发送失败");
+    } finally {
+        state.controlSending = "";
+        renderDetail();
+    }
+}
+
+function buildControlPayload(persona) {
+    const payload = state.payload || {};
+    const group = payload.group || {};
+    const review = payload.reviewPayload || {};
+    const roomProfile = review.roomProfile || {};
+    return {
+        persona,
+        roomId: roomProfile.roomId || "",
+        roomProfile,
+        selectedDanmaku: review.selectedDanmaku || {
+            content: group.content,
+            count: group.count,
+            uniqueUsers: group.uniqueUsers,
+            firstTimestamp: group.firstAt,
+            latestTimestamp: group.latestAt
+        },
+        group,
+        samples: group.samples || review.samples || [],
+        context: review.context || [],
+        aiResult: state.aiResult
+    };
 }
 
 async function requestAiReview(payload) {
-    if (!payload || !payload.aiEndpoint) return;
+    if (!payload) return;
 
     state.aiLoading = true;
     state.aiError = "";
     renderDetail();
     try {
-        const response = await fetch(payload.aiEndpoint, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload.reviewPayload)
-        });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        state.aiResult = await response.json();
+        state.aiResult = await reviewDanmaku(payload);
         state.aiLoading = false;
         renderDetail();
     } catch (error) {
@@ -114,6 +184,22 @@ async function requestAiReview(payload) {
         state.aiError = error.message || "联网搜索失败";
         renderDetail();
     }
+}
+
+async function reviewDanmaku(payload) {
+    if (window.desktopWindow && window.desktopWindow.reviewDanmaku) {
+        return window.desktopWindow.reviewDanmaku(payload.reviewPayload || {});
+    }
+    if (!payload.aiEndpoint) {
+        throw new Error("AI 审核接口未配置");
+    }
+    const response = await fetch(payload.aiEndpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload.reviewPayload)
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return response.json();
 }
 
 function normalizeAiResult(result, fallback) {
@@ -150,6 +236,42 @@ function renderPrompterBody(ai) {
         ${renderLine("爆了", ai.interaction, "♟")}
         ${renderLine("降温", ai.cooldown, "🛡")}
     `;
+}
+
+function renderControlResult() {
+    if (state.controlSending) {
+        return `
+            <div class="control-send-card">
+                <span>正在生成并发送控场弹幕</span>
+                <p>人格：${escapeHtml(personaLabel(state.controlSending))}</p>
+            </div>
+        `;
+    }
+    const result = state.controlResult;
+    if (!result) return "";
+    const send = result.send || {};
+    const ok = Boolean(send.ok);
+    const needsLogin = send.code === "LOGIN_REQUIRED";
+    return `
+        <div class="control-send-card ${ok ? "sent" : "warn"}">
+            <span>${ok ? "已发送" : needsLogin ? "需要登录虎牙" : "发送未确认"}</span>
+            <p>${escapeHtml(result.text || send.text || "")}</p>
+            <small>${escapeHtml(send.message || result.reason || "")}</small>
+            <div class="control-send-actions">
+                ${needsLogin ? `<button class="secondary-button" id="open-huya-login" type="button">登录虎牙</button>` : ""}
+                ${result.text ? `<button class="secondary-button" data-copy-line="${escapeAttr(result.text)}" type="button">复制弹幕</button>` : ""}
+            </div>
+        </div>
+    `;
+}
+
+function personaLabel(value) {
+    const labels = {
+        gentle: "温柔和蔼",
+        funny: "幽默诙谐乐子人",
+        justice: "激进正义感爆棚"
+    };
+    return labels[value] || "控场";
 }
 
 function renderExplainBody(ai) {
@@ -277,11 +399,21 @@ async function copyReviewPayload(payload) {
 
 async function copyText(text) {
     try {
-        await navigator.clipboard.writeText(text);
+        if (window.desktopWindow && window.desktopWindow.copyText) {
+            await window.desktopWindow.copyText(text);
+        } else {
+            await navigator.clipboard.writeText(text);
+        }
         showToast("已复制");
     } catch (error) {
         showToast("复制失败");
     }
+}
+
+async function openHuyaLogin() {
+    if (!window.desktopWindow || !window.desktopWindow.openHuyaLogin) return;
+    await window.desktopWindow.openHuyaLogin();
+    showToast("请在弹出的窗口登录虎牙");
 }
 
 function readMarkers() {

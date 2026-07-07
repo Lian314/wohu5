@@ -1,9 +1,11 @@
 const path = require('path');
 const fs = require('fs');
-const { app, BrowserWindow, Menu, Tray, ipcMain, nativeImage, screen } = require('electron');
+const zlib = require('zlib');
+const { app, BrowserWindow, Menu, Tray, clipboard, ipcMain, nativeImage, screen, session } = require('electron');
 const express = require('express');
 const dns = require('dns');
 const HuyaDanmu = require('huya-danmu');
+const { createMemeRagStore, createMemeRagRouter, renderMemeRagAdminPage } = require('./shared/meme-rag');
 
 if (dns.setDefaultResultOrder) {
     dns.setDefaultResultOrder('ipv4first');
@@ -14,6 +16,8 @@ const windows = new Set();
 const ASSET_DIR = path.join(__dirname, 'renderer', 'assets');
 const MIN_OPACITY = 0.18;
 const PET_SIZE = 132;
+const HUYA_AUTH_PARTITION = 'persist:huya-auth';
+const EXTERNAL_MEME_RAG_BASE_URL = (process.env.MEME_RAG_BASE_URL || 'http://localhost:3100').replace(/\/+$/, '');
 const AI_BASE_URL = 'https://ws-d2jrp9pxv8v3tdkq.cn-beijing.maas.aliyuncs.com/compatible-mode/v1';
 const AI_MODEL = 'qwen3.7-plus';
 const AI_API_KEY = process.env.DASHSCOPE_API_KEY || 'sk-ws-H.EMDLHYL.9skU.MEUCIQDsKktWcjuL9g_ZW7PtVBYKebiRaWQKL0l_1DL_fKIogAIgTLAlc58qVDo6IfUA4zG8UX1NfiMkrTYWU4XJoqPSxzA';
@@ -29,10 +33,15 @@ let lastDetailPayload = null;
 let apiServer;
 let huyaClient;
 let reconnectTimer;
+let huyaLoginWindow;
+let huyaSendWindow;
+let huyaSendRoomId = '';
+let lastHuyaSendAt = 0;
 let currentRoomId = '';
 let backendStatus = '未连接';
 let danmakuQueue = [];
 let currentRoomProfile = null;
+let memeRagStore = null;
 
 app.setName(APP_NAME);
 app.setPath('userData', path.join(app.getPath('appData'), 'HuyaDanmakuCopilot'));
@@ -42,6 +51,15 @@ if (process.platform === 'win32') {
 
 function assetPath(name) {
     return path.join(ASSET_DIR, name);
+}
+
+function getMemeRagStore() {
+    if (!memeRagStore) {
+        memeRagStore = createMemeRagStore({
+            dbPath: path.join(app.getPath('userData'), 'meme-rag-db.json')
+        });
+    }
+    return memeRagStore;
 }
 
 function existingAsset(...names) {
@@ -79,7 +97,8 @@ function startApiServer() {
     if (apiServer) return;
 
     const api = express();
-    api.use(express.json());
+    const ragStore = getMemeRagStore();
+    api.use(express.json({ limit: '20mb' }));
     api.use((req, res, next) => {
         res.header('Access-Control-Allow-Origin', '*');
         res.header('Access-Control-Allow-Headers', 'Content-Type');
@@ -90,6 +109,15 @@ function startApiServer() {
 
     api.get('/api/danmaku', (_req, res) => {
         res.json(danmakuQueue);
+    });
+
+    api.post('/api/connect-room', (req, res) => {
+        try {
+            const roomId = req.body && req.body.roomId ? req.body.roomId : req.query.roomId;
+            res.json(connectRoom(roomId));
+        } catch (error) {
+            res.status(400).json({ error: error.message || '连接直播间失败' });
+        }
     });
 
     api.get('/api/status', (_req, res) => {
@@ -132,8 +160,45 @@ function startApiServer() {
         }
     });
 
+    api.post('/api/control-danmaku', async (req, res) => {
+        try {
+            const result = await generateAndSendControlDanmaku(req.body || {});
+            res.json(result);
+        } catch (error) {
+            res.status(502).json(normalizeControlError(error));
+        }
+    });
+
+    api.post('/api/meme-library/parse', async (req, res) => {
+        try {
+            const result = await parseMemeLibraryText(req.body || {});
+            res.json(result);
+        } catch (error) {
+            res.status(502).json({
+                error: error.message || '热梗解析失败',
+                memes: []
+            });
+        }
+    });
+
+    api.use('/api/meme-rag', createMemeRagRouter({
+        store: ragStore,
+        parseMemeText: parseMemeLibraryText
+    }));
+
+    api.get('/rag', (_req, res) => {
+        res.type('html').send(renderMemeRagAdminPage());
+    });
+
     apiServer = api.listen(3000, () => {
         backendStatus = '等待房间号';
+        updateTrayMenu();
+    });
+    apiServer.on('error', (error) => {
+        backendStatus = error && error.code === 'EADDRINUSE'
+            ? '端口占用，已切换内部通道'
+            : `API 错误：${error.message || error}`;
+        statsWindow && statsWindow.webContents.send('backend:status', getBackendState());
         updateTrayMenu();
     });
 }
@@ -293,6 +358,38 @@ async function fetchWithTimeout(url, options) {
     }
 }
 
+async function requestExternalMemeRag(pathname, options = {}) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), Number(options.timeoutMs) || 1800);
+    try {
+        const response = await fetch(`${EXTERNAL_MEME_RAG_BASE_URL}${pathname}`, {
+            method: options.method || 'GET',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(options.headers || {})
+            },
+            body: options.body === undefined ? undefined : JSON.stringify(options.body),
+            signal: controller.signal
+        });
+        if (!response.ok) {
+            const body = await response.text().catch(() => '');
+            throw new Error(`外接热梗库 HTTP ${response.status}: ${body.slice(0, 160)}`);
+        }
+        return response.json();
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
+function externalMemeRagUnavailable(error) {
+    return {
+        external: true,
+        baseUrl: EXTERNAL_MEME_RAG_BASE_URL,
+        error: error.message || '外接热梗库不可用',
+        code: 'EXTERNAL_RAG_UNAVAILABLE'
+    };
+}
+
 async function readAiResponse(response) {
     const json = await response.json();
     if (json.error) {
@@ -426,6 +523,221 @@ function polishExplain(text) {
     const limit = 320;
     if (source.length <= limit) return source;
     return `${source.slice(0, limit).replace(/[，。！？、；：,.!?;:]?$/, '')}。`;
+}
+
+async function generateAndSendControlDanmaku(payload) {
+    const generated = await generateControlDanmaku(payload);
+    const sendResult = await sendHuyaDanmaku(generated.text, payload.roomId || currentRoomId);
+    return {
+        ...generated,
+        send: sendResult
+    };
+}
+
+async function generateControlDanmaku(payload) {
+    const persona = normalizePersona(payload.persona);
+    const roomProfile = payload.roomProfile || currentRoomProfile || buildEmptyRoomProfile(currentRoomId);
+    const prompt = buildControlDanmakuPrompt({
+        ...payload,
+        persona,
+        roomProfile
+    });
+    const content = await callBailianChat(prompt).catch(() => callBailianResponses(prompt));
+    const parsed = parseJsonObject(content);
+    const text = sanitizeDanmakuText(parsed.text || parsed.danmaku || parsed.line || '');
+    return {
+        persona: persona.id,
+        personaLabel: persona.label,
+        text: text || persona.fallback,
+        reason: String(parsed.reason || '已根据当前弹幕和直播间语境生成控场弹幕。').slice(0, 120),
+        generatedAt: Date.now(),
+        roomId: String(payload.roomId || currentRoomId || '')
+    };
+}
+
+function normalizePersona(value) {
+    const personas = {
+        gentle: {
+            id: 'gentle',
+            label: '温柔和蔼',
+            tone: '温柔、体面、护人但不阴阳怪气，像成熟场控帮主播把火降下来。',
+            fallback: '大家轻一点，玩梗别往人身上带，给主播留点舒服空间。'
+        },
+        funny: {
+            id: 'funny',
+            label: '幽默诙谐乐子人',
+            tone: '幽默、嘴快、有节目效果，用玩笑把攻击弹幕顶回去，但不辱骂真实个人。',
+            fallback: '别尬黑了，这波弹幕火力太歪，节目效果留给操作别留给人身。'
+        },
+        justice: {
+            id: 'justice',
+            label: '激进正义感爆棚',
+            tone: '强势、护短、正义感很足，敢把节奏顶回去，但不能脏话、人身攻击、歧视或威胁。',
+            fallback: '攻击人的弹幕收一收，真有本事看操作，别躲屏幕后面带歪节奏。'
+        }
+    };
+    return personas[value] || personas.funny;
+}
+
+function buildControlDanmakuPrompt(payload) {
+    const persona = payload.persona;
+    const selected = payload.selectedDanmaku || payload.group || {};
+    const context = Array.isArray(payload.context) ? payload.context.slice(-30) : [];
+    const samples = Array.isArray(payload.samples) ? payload.samples.slice(-12) : [];
+    return [
+        '你是虎牙直播间场控弹幕生成器。你的任务是生成“一条将被真实发送到直播间的弹幕”。',
+        '只输出 JSON，不要 Markdown，不要思考过程。',
+        `人格：${persona.label}。语气要求：${persona.tone}`,
+        '目标：对抗当前弹幕里的攻击、带节奏或一边倒应援，让直播间气氛回到可控状态。',
+        '硬规则：',
+        '1. text 只能是一条弹幕，12-32 个中文字符，像真人发的，不要 AI 腔。',
+        '2. 可以有节目效果，但不能辱骂、歧视、色情、威胁、引战现实群体。',
+        '3. 电竞队伍失衡时，可以补弱势一边的应援；人身攻击时，优先护人和降温。',
+        '4. 不要出现“根据上下文/作为AI/建议发送/我认为”。',
+        '5. 输出字段固定：text, reason。',
+        '',
+        `直播间信息：${JSON.stringify(payload.roomProfile || {})}`,
+        `当前弹幕：${JSON.stringify(selected)}`,
+        `样本：${JSON.stringify(samples)}`,
+        `近期上下文：${JSON.stringify(context)}`,
+        '',
+        '输出示例：{"text":"别尬黑了，节目效果看操作别看嘴硬。","reason":"攻击性弹幕开始抬头，需要用玩笑压回节奏。"}'
+    ].join('\n');
+}
+
+function sanitizeDanmakuText(text) {
+    return String(text || '')
+        .replace(/[\r\n\t]+/g, ' ')
+        .replace(/[<>]/g, '')
+        .replace(/\s+/g, '')
+        .slice(0, 50);
+}
+
+async function parseMemeLibraryText(payload) {
+    const sourceText = [
+        String(payload.text || '').trim(),
+        extractUploadedDocumentText(payload)
+    ].filter(Boolean).join('\n\n').trim();
+    if (!sourceText) {
+        return { memes: [] };
+    }
+    const prompt = [
+        '你是直播热梗库整理助手。请从用户提供的文本或文档内容里提取适合直播场控使用的热梗。',
+        '只输出 JSON，不要 Markdown，不要思考过程。',
+        '每个梗包含 content, aliases, description, tags。',
+        '规则：',
+        '1. content 是主梗原句，2-16 字优先。',
+        '2. aliases 是别名/相似说法数组，最多 6 个。',
+        '3. description 用 1-2 句解释来源、含义和直播间怎么接。',
+        '4. tags 最多 4 个，比如 电竞、抽象、夸夸、控场、热梗。',
+        '5. 去掉纯广告、辱骂、隐私、人身攻击和不可直接使用的内容。',
+        '6. 最多返回 24 条。',
+        '',
+        `文本：${sourceText.slice(0, 12000)}`,
+        '',
+        '输出示例：{"memes":[{"content":"主梗原句","aliases":["相似说法","别名"],"description":"用 1-2 句说明这个梗的来源、含义和直播间接法。","tags":["热梗","调侃"]}]}'
+    ].join('\n');
+    const content = await callBailianChat(prompt).catch(() => callBailianResponses(prompt));
+    const parsed = parseJsonObject(content);
+    const memes = Array.isArray(parsed.memes) ? parsed.memes : [];
+    return {
+        memes: memes.slice(0, 24).map((item) => normalizeParsedMeme(item)).filter(Boolean)
+    };
+}
+
+function extractUploadedDocumentText(payload) {
+    const fileName = String(payload.fileName || '').toLowerCase();
+    const fileBase64 = String(payload.fileBase64 || '');
+    if (!fileBase64) return '';
+    const buffer = Buffer.from(fileBase64, 'base64');
+    if (fileName.endsWith('.docx')) {
+        return extractDocxText(buffer);
+    }
+    return buffer.toString('utf8');
+}
+
+function extractDocxText(buffer) {
+    const entry = readZipEntry(buffer, 'word/document.xml');
+    if (!entry) return '';
+    return entry
+        .toString('utf8')
+        .replace(/<w:tab\/>/g, ' ')
+        .replace(/<\/w:p>/g, '\n')
+        .replace(/<[^>]+>/g, '')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&amp;/g, '&')
+        .replace(/&quot;/g, '"')
+        .replace(/&apos;/g, "'")
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+}
+
+function readZipEntry(buffer, wantedName) {
+    const eocdOffset = findZipEocd(buffer);
+    if (eocdOffset < 0) return null;
+    const centralOffset = buffer.readUInt32LE(eocdOffset + 16);
+    let offset = centralOffset;
+    while (offset + 46 <= buffer.length && buffer.readUInt32LE(offset) === 0x02014b50) {
+        const method = buffer.readUInt16LE(offset + 10);
+        const compressedSize = buffer.readUInt32LE(offset + 20);
+        const nameLength = buffer.readUInt16LE(offset + 28);
+        const extraLength = buffer.readUInt16LE(offset + 30);
+        const commentLength = buffer.readUInt16LE(offset + 32);
+        const localOffset = buffer.readUInt32LE(offset + 42);
+        const name = buffer.toString('utf8', offset + 46, offset + 46 + nameLength);
+        if (name === wantedName) {
+            const localNameLength = buffer.readUInt16LE(localOffset + 26);
+            const localExtraLength = buffer.readUInt16LE(localOffset + 28);
+            const dataStart = localOffset + 30 + localNameLength + localExtraLength;
+            const compressed = buffer.subarray(dataStart, dataStart + compressedSize);
+            if (method === 0) return compressed;
+            if (method === 8) return zlib.inflateRawSync(compressed);
+            return null;
+        }
+        offset += 46 + nameLength + extraLength + commentLength;
+    }
+    return null;
+}
+
+function findZipEocd(buffer) {
+    const min = Math.max(0, buffer.length - 0xffff - 22);
+    for (let index = buffer.length - 22; index >= min; index -= 1) {
+        if (buffer.readUInt32LE(index) === 0x06054b50) return index;
+    }
+    return -1;
+}
+
+function normalizeParsedMeme(item) {
+    const content = sanitizeMemeField(item && item.content);
+    if (!content) return null;
+    return {
+        key: normalizeKey(content),
+        content,
+        aliases: Array.isArray(item.aliases)
+            ? item.aliases.map(sanitizeMemeField).filter(Boolean).slice(0, 6)
+            : [],
+        description: String(item.description || '').replace(/\s+/g, ' ').trim().slice(0, 180),
+        tags: Array.isArray(item.tags)
+            ? item.tags.map(sanitizeMemeField).filter(Boolean).slice(0, 4)
+            : [],
+        createdAt: Date.now()
+    };
+}
+
+function sanitizeMemeField(value) {
+    return String(value || '')
+        .replace(/[\r\n\t]+/g, ' ')
+        .replace(/[<>]/g, '')
+        .trim()
+        .slice(0, 80);
+}
+
+function normalizeKey(value) {
+    return String(value || '')
+        .replace(/\s+/g, '')
+        .replace(/[!！?？。.,，~～、]+$/g, '')
+        .toLowerCase();
 }
 
 async function refreshRoomProfile(roomId) {
@@ -622,10 +934,12 @@ function connectRoom(roomId) {
 
     huyaClient.on('message', (msg) => {
         if (msg.type !== 'chat') return;
+        const receivedAt = Date.now();
         const item = {
             nickname: msg.from && msg.from.name ? msg.from.name : '虎牙用户',
             content: msg.content,
-            timestamp: msg.time || Date.now()
+            timestamp: receivedAt,
+            sourceTimestamp: normalizeDanmakuTimestamp(msg.time, receivedAt)
         };
         danmakuQueue.push(item);
         if (danmakuQueue.length > 150) {
@@ -665,6 +979,295 @@ function getBackendState() {
         status: backendStatus,
         count: danmakuQueue.length,
         roomProfile: currentRoomProfile
+    };
+}
+
+function normalizeDanmakuTimestamp(value, fallback = Date.now()) {
+    if (value instanceof Date && !Number.isNaN(value.getTime())) {
+        return value.getTime();
+    }
+
+    if (typeof value === 'string' && value.trim()) {
+        const numeric = Number(value);
+        if (Number.isFinite(numeric)) {
+            return normalizeDanmakuTimestamp(numeric, fallback);
+        }
+        const parsed = Date.parse(value);
+        if (Number.isFinite(parsed)) {
+            return parsed;
+        }
+    }
+
+    if (Number.isFinite(value)) {
+        if (value > 0 && value < 100000000000) {
+            return Math.round(value * 1000);
+        }
+        if (value > 0) {
+            return Math.round(value);
+        }
+    }
+
+    return fallback;
+}
+
+function openHuyaLoginWindow() {
+    if (huyaLoginWindow && !huyaLoginWindow.isDestroyed()) {
+        huyaLoginWindow.show();
+        huyaLoginWindow.focus();
+        return { opened: true };
+    }
+
+    const roomId = String(currentRoomId || '').trim();
+    huyaLoginWindow = new BrowserWindow({
+        width: 980,
+        height: 720,
+        minWidth: 760,
+        minHeight: 560,
+        title: '登录虎牙账号',
+        icon: getAppIconPath(),
+        webPreferences: {
+            partition: HUYA_AUTH_PARTITION,
+            contextIsolation: true,
+            nodeIntegration: false
+        }
+    });
+    huyaLoginWindow.loadURL(roomId ? `https://www.huya.com/${encodeURIComponent(roomId)}` : 'https://www.huya.com/');
+    huyaLoginWindow.on('closed', () => {
+        huyaLoginWindow = null;
+    });
+    return { opened: true };
+}
+
+async function sendHuyaDanmaku(text, roomId) {
+    const cleanText = sanitizeDanmakuText(text);
+    const normalizedRoom = String(roomId || currentRoomId || '').trim();
+    if (!cleanText) {
+        return { ok: false, code: 'EMPTY_TEXT', message: '弹幕内容为空' };
+    }
+    if (!/^\d{3,}$/.test(normalizedRoom)) {
+        return { ok: false, code: 'NO_ROOM', message: '缺少直播间号' };
+    }
+    if (Date.now() - lastHuyaSendAt < 8000) {
+        return { ok: false, code: 'RATE_LIMIT', message: '发送太快，稍等几秒再点' };
+    }
+
+    try {
+        const loginState = await getHuyaAuthState();
+        if (!loginState.likelyLoggedIn) {
+            openHuyaLoginWindow();
+            return {
+                ok: false,
+                code: 'LOGIN_REQUIRED',
+                message: '请先在弹出的虎牙窗口登录账号，登录后再点人格按钮发送',
+                text: cleanText,
+                auth: loginState
+            };
+        }
+
+        await ensureHuyaSendWindow(normalizedRoom);
+        const result = await huyaSendWindow.webContents.executeJavaScript(buildHuyaSendScript(cleanText, normalizedRoom), true);
+        if (result && result.ok) {
+            lastHuyaSendAt = Date.now();
+            return { ok: true, code: 'SENT', message: '已通过虎牙登录态发送', text: cleanText };
+        }
+        if (result && result.code === 'LOGIN_REQUIRED') {
+            showHuyaSendWindow();
+            return { ok: false, code: 'LOGIN_REQUIRED', message: '需要先登录虎牙账号', text: cleanText };
+        }
+        showHuyaSendWindow();
+        return {
+            ok: false,
+            code: result && result.code ? result.code : 'SEND_FAILED',
+            message: result && result.message ? result.message : '虎牙页面未确认真实发送，请在弹出的房间页检查登录状态',
+            text: cleanText
+        };
+    } catch (error) {
+        showHuyaSendWindow();
+        return {
+            ok: false,
+            code: 'SEND_FAILED',
+            message: error.message || '虎牙发送失败',
+            text: cleanText
+        };
+    }
+}
+
+async function ensureHuyaSendWindow(roomId) {
+    if (!huyaSendWindow || huyaSendWindow.isDestroyed()) {
+        huyaSendWindow = new BrowserWindow({
+            width: 960,
+            height: 720,
+            show: false,
+            title: '虎牙弹幕发送通道',
+            icon: getAppIconPath(),
+            webPreferences: {
+                partition: HUYA_AUTH_PARTITION,
+                contextIsolation: true,
+                nodeIntegration: false
+            }
+        });
+        huyaSendWindow.on('closed', () => {
+            huyaSendWindow = null;
+            huyaSendRoomId = '';
+        });
+    }
+
+    if (huyaSendRoomId !== roomId || !huyaSendWindow.webContents.getURL().includes(`huya.com/${roomId}`)) {
+        await huyaSendWindow.loadURL(`https://www.huya.com/${encodeURIComponent(roomId)}`);
+        huyaSendRoomId = roomId;
+        await waitForHuyaRoomReady(huyaSendWindow);
+    }
+}
+
+function waitForHuyaRoomReady(win) {
+    return new Promise((resolve) => {
+        let done = false;
+        const finish = () => {
+            if (done) return;
+            done = true;
+            clearTimeout(timer);
+            resolve();
+        };
+        const timer = setTimeout(finish, 6000);
+        win.webContents.once('did-finish-load', finish);
+        win.webContents.once('did-stop-loading', finish);
+    });
+}
+
+async function getHuyaAuthState() {
+    try {
+        const cookies = await session.fromPartition(HUYA_AUTH_PARTITION).cookies.get({ domain: 'huya.com' });
+        const names = new Set(cookies.map((item) => item.name));
+        const authNames = ['udb_uid', 'udb_n', 'yyuid', 'username', 'huya_uid', 'uid'];
+        return {
+            likelyLoggedIn: authNames.some((name) => names.has(name)),
+            cookies: cookies.map((item) => item.name).filter((name) => authNames.includes(name))
+        };
+    } catch (error) {
+        return { likelyLoggedIn: false, cookies: [] };
+    }
+}
+
+function showHuyaSendWindow() {
+    if (!huyaSendWindow || huyaSendWindow.isDestroyed()) return;
+    huyaSendWindow.show();
+    huyaSendWindow.focus();
+}
+
+function buildHuyaSendScript(text, roomId) {
+    return `
+(() => {
+    const text = ${JSON.stringify(text)};
+    const roomId = ${JSON.stringify(String(roomId || ''))};
+    const url = new URL(location.href);
+    if (!/huya\\.com$/i.test(url.hostname) && !/\\.huya\\.com$/i.test(url.hostname)) {
+        return { ok: false, code: 'BAD_PAGE', message: '发送页面不是虎牙直播页：' + location.href };
+    }
+    if (roomId && !url.pathname.includes(roomId)) {
+        return { ok: false, code: 'WRONG_ROOM', message: '发送页面不是当前绑定直播间：' + location.href };
+    }
+    const visible = (el) => {
+        if (!el) return false;
+        const rect = el.getBoundingClientRect();
+        const style = window.getComputedStyle(el);
+        return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none';
+    };
+    const bodyText = document.body ? document.body.innerText || '' : '';
+    const loginHints = ['登录后发弹幕', '请先登录', '登录虎牙', '登录/注册'];
+    const inputSelectors = [
+        '#pub_msg_input',
+        '#pub_msg_input textarea',
+        '#pub_msg_input input',
+        '.msg-input',
+        '.msg-input textarea',
+        '.msg-input input',
+        '.room-chat textarea',
+        '.room-chat input',
+        '.chat-room textarea',
+        '.chat-room input',
+        '.pub_msg_input',
+        '.chat-input textarea',
+        '.chat-input input',
+        'textarea[placeholder*="弹幕"]',
+        'input[placeholder*="弹幕"]',
+        'textarea',
+        'input[type="text"]',
+        'div[contenteditable="true"]'
+    ];
+    const inputs = [...new Set(inputSelectors.flatMap((selector) => Array.from(document.querySelectorAll(selector))))];
+    const input = inputs.find(visible);
+    if (!input) {
+        if (loginHints.some((hint) => bodyText.includes(hint))) {
+            return { ok: false, code: 'LOGIN_REQUIRED', message: '页面提示需要登录后发弹幕' };
+        }
+        return { ok: false, code: 'INPUT_NOT_FOUND', message: '没有找到虎牙弹幕输入框' };
+    }
+    if (loginHints.some((hint) => bodyText.includes(hint)) && !document.cookie) {
+        return { ok: false, code: 'LOGIN_REQUIRED', message: '页面提示需要登录后发弹幕' };
+    }
+    input.focus();
+    if ('value' in input) {
+        const setter = Object.getOwnPropertyDescriptor(input.constructor.prototype, 'value');
+        if (setter && setter.set) {
+            setter.set.call(input, text);
+        } else {
+            input.value = text;
+        }
+    } else {
+        input.textContent = text;
+        input.innerText = text;
+    }
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    const before = 'value' in input ? input.value : (input.innerText || input.textContent || '');
+    const ancestors = [];
+    let cursor = input;
+    for (let index = 0; index < 6 && cursor; index += 1) {
+        ancestors.push(cursor);
+        cursor = cursor.parentElement;
+    }
+    const sendSelectors = [
+        '.send-btn',
+        '.btn-send',
+        '.send',
+        '.pub-send',
+        '.msg-send',
+        'button',
+        '[role="button"]'
+    ];
+    const candidates = [...new Set(ancestors.flatMap((root) => sendSelectors.flatMap((selector) => Array.from(root.querySelectorAll ? root.querySelectorAll(selector) : []))))]
+        .filter(visible)
+        .filter((el) => {
+            const label = (el.innerText || el.textContent || el.getAttribute('aria-label') || '').trim();
+            const cls = String(el.className || '');
+            return /^发送$/.test(label) || /send|submit|pub/i.test(cls);
+        })
+        .filter((el) => !el.disabled && el.getAttribute('aria-disabled') !== 'true');
+    if (candidates[0]) {
+        candidates[0].click();
+    } else {
+        input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
+        input.dispatchEvent(new KeyboardEvent('keypress', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
+        input.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
+    }
+    const after = 'value' in input ? input.value : (input.innerText || input.textContent || '');
+    if (after && after.trim() === before.trim()) {
+        return { ok: false, code: 'NOT_CONFIRMED', message: '已尝试发送，但输入框未清空，虎牙页面没有确认发出' };
+    }
+    return { ok: true, code: candidates[0] ? 'CLICK_SENT' : 'ENTER_SENT', message: '虎牙输入框已清空，发送已触发' };
+})()
+`;
+}
+
+function normalizeControlError(error) {
+    return {
+        error: error.message || '控场弹幕生成失败',
+        text: '',
+        send: {
+            ok: false,
+            code: 'AI_FAILED',
+            message: 'AI 生成失败，未执行发送'
+        }
     };
 }
 
@@ -1038,4 +1641,89 @@ ipcMain.handle('stats:toggle', () => {
 });
 
 ipcMain.handle('backend:connect-room', (_event, roomId) => connectRoom(roomId));
+ipcMain.handle('backend:get-danmaku', () => danmakuQueue);
 ipcMain.handle('backend:get-state', () => getBackendState());
+ipcMain.handle('auth:open-huya-login', () => openHuyaLoginWindow());
+ipcMain.handle('control:send-danmaku', (_event, payload) => generateAndSendControlDanmaku(payload || {}));
+ipcMain.handle('ai:review-danmaku', (_event, payload) => reviewDanmakuWithAi(payload || {}));
+ipcMain.handle('meme-library:parse', (_event, payload) => parseMemeLibraryText(payload || {}));
+ipcMain.handle('meme-rag:list', async () => {
+    try {
+        return {
+            ...(await requestExternalMemeRag('/api/meme-rag/items')),
+            external: true,
+            baseUrl: EXTERNAL_MEME_RAG_BASE_URL
+        };
+    } catch (error) {
+        return {
+            ...externalMemeRagUnavailable(error),
+            count: 0,
+            items: []
+        };
+    }
+});
+ipcMain.handle('meme-rag:match', async (_event, payload) => {
+    try {
+        return {
+            ...(await requestExternalMemeRag('/api/meme-rag/match', {
+                method: 'POST',
+                body: payload || {}
+            })),
+            external: true,
+            baseUrl: EXTERNAL_MEME_RAG_BASE_URL
+        };
+    } catch (error) {
+        return {
+            ...externalMemeRagUnavailable(error),
+            matches: []
+        };
+    }
+});
+ipcMain.handle('meme-rag:upsert', async (_event, payload) => {
+    try {
+        return {
+            ...(await requestExternalMemeRag('/api/meme-rag/bulk', {
+                method: 'POST',
+                body: {
+                    items: Array.isArray(payload && payload.items) ? payload.items : [payload || {}],
+                    source: payload && payload.source ? payload.source : 'desktop'
+                }
+            })),
+            external: true,
+            baseUrl: EXTERNAL_MEME_RAG_BASE_URL
+        };
+    } catch (error) {
+        return externalMemeRagUnavailable(error);
+    }
+});
+ipcMain.handle('meme-rag:remove', async (_event, key) => {
+    try {
+        return {
+            ...(await requestExternalMemeRag(`/api/meme-rag/items/${encodeURIComponent(key)}`, {
+                method: 'DELETE'
+            })),
+            external: true,
+            baseUrl: EXTERNAL_MEME_RAG_BASE_URL
+        };
+    } catch (error) {
+        return externalMemeRagUnavailable(error);
+    }
+});
+ipcMain.handle('meme-rag:import', async (_event, payload) => {
+    try {
+        return {
+            ...(await requestExternalMemeRag('/api/meme-rag/import', {
+                method: 'POST',
+                body: payload || {}
+            })),
+            external: true,
+            baseUrl: EXTERNAL_MEME_RAG_BASE_URL
+        };
+    } catch (error) {
+        return externalMemeRagUnavailable(error);
+    }
+});
+ipcMain.handle('clipboard:write-text', (_event, text) => {
+    clipboard.writeText(String(text || ''));
+    return true;
+});

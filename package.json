@@ -6,12 +6,15 @@
   "scripts": {
     "desktop": "electron .",
     "assets:icons": "python scripts/generate-icons.py",
+    "rag": "node server.js",
+    "rag:external": "node scripts/meme-rag-external-server.js",
     "dist": "electron-builder --win portable",
     "dist:win": "electron-builder --win portable",
     "dist:mac": "electron-builder --mac dmg zip",
     "backend": "node server.js",
-    "test": "npm run test:renderer && npm run test:desktop-config",
+    "test": "npm run test:renderer && npm run test:rag && npm run test:desktop-config",
     "test:renderer": "node -e \"const fs=require('fs'); for (const f of ['app/renderer/app.js','app/renderer/detail.js','app/renderer/pet.js']) new Function(fs.readFileSync(f,'utf8')); console.log('renderer syntax ok')\"",
+    "test:rag": "node -e \"const fs=require('fs'),os=require('os'),path=require('path'); const {createMemeRagStore}=require('./app/shared/meme-rag'); const p=path.join(os.tmpdir(),'meme-rag-test-'+Date.now()+'.json'); const s=createMemeRagStore({dbPath:p}); s.upsertMany([{content:'测试热梗甲',aliases:['测试甲','测试梗'],description:'测试用热梗'}]); const r=s.match('测试甲来了',{threshold:.45,limit:1}); if(!r.matches.length) throw new Error('rag match failed'); fs.unlinkSync(p); console.log('rag match ok')\"",
     "test:desktop-config": "node scripts/verify-desktop-config.js"
   },
   "keywords": [],
