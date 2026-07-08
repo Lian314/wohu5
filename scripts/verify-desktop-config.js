@@ -45,6 +45,8 @@ const docs = read('docs/desktop-build.md');
 ].forEach(([relativePath, minBytes]) => assertFile(relativePath, minBytes));
 
 assert(pkg.build.productName === '弹幕梗捕手', 'Product name should match the app brand.');
+assert(pkg.author === '连连连', 'Package author should be the copyright owner.');
+assert(pkg.build.copyright === '连连连', 'Windows copyright should show the configured owner.');
 assert(pkg.build.win.icon === 'app/renderer/assets/icon.ico', 'Windows build must use the generated .ico.');
 assert(pkg.build.win.signExecutable === false, 'Windows internal build should skip signing only, not resource editing.');
 assert(targetsFor(pkg.build.win).includes('portable'), 'Windows build must produce a portable exe.');

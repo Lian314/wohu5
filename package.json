@@ -18,7 +18,7 @@
     "test:desktop-config": "node scripts/verify-desktop-config.js"
   },
   "keywords": [],
-  "author": "",
+  "author": "连连连",
   "license": "ISC",
   "type": "commonjs",
   "engines": {
@@ -42,6 +42,7 @@
   "build": {
     "appId": "com.huya.danmaku.copilot",
     "productName": "弹幕梗捕手",
+    "copyright": "连连连",
     "directories": {
       "output": "release"
     },
